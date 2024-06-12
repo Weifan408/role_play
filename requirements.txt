@@ -1,0 +1,7 @@
+ray[all] == 2.10.0
+seaborn
+matplotlib
+opencv-python
+jupyter
+torch
+wandb

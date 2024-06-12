@@ -1,0 +1,84 @@
+defaults:
+  framework: torch
+harvest:
+  env_config:
+    name: "Harvest"
+    w: 0.3
+    num_agent: 2
+    trial_length: 10
+    max_cycles: 200
+  rollouts:
+    num_rollout_workers: 16
+  model:
+    fcnet_hiddens: [64, 64]
+    fcnet_activation: "relu"
+    conv_activation: "relu"
+    post_fcnet_hiddens: [256,]
+    post_fcnet_activation: "relu"
+    lstm_cell_size: 256
+    lstm_use_prev_action: True
+    lstm_use_prev_reward: True
+    use_lstm: True
+  custom_model:
+    num_lstm_layers: 1
+    two_hot_intervals: 10
+  evaluation:
+    evaluation_num_workers: 2
+    evaluation_interval: 200
+    evaluation_parallel_to_training: True
+    # evaluation_duration: 5
+    evaluation_config:
+      explore: False
+      env_config:
+        name: "Harvest"
+        w: 0.3
+        num_agent: 2
+        trial_length: 10
+        max_cycles: 200
+        eval: True
+  training:
+    train_batch_size: 8000
+    sgd_minibatch_size: 2000
+cleanup:
+  env_config:
+    name: "CleanUp"
+    w: 0.3
+    num_agent: 2
+    trial_length: 10
+    max_cycles: 200
+  rollouts:
+    num_rollout_workers: 16
+    # num_envs_per_worker: 4
+  model:
+    fcnet_hiddens: [64, 64]
+    fcnet_activation: "relu"
+    conv_activation: "relu"
+    post_fcnet_hiddens: [256,]
+    post_fcnet_activation: "relu"
+    lstm_cell_size: 256
+    lstm_use_prev_action: True
+    lstm_use_prev_reward: True
+    use_lstm: True
+  custom_model:
+    num_lstm_layers: 1
+    two_hot_intervals: 10
+  evaluation:
+    evaluation_num_workers: 2
+    evaluation_interval: 200
+    evaluation_parallel_to_training: True
+    # evaluation_duration: 5
+    evaluation_config:
+      explore: False
+      env_config:
+        name: "CleanUp"
+        w: 0.3
+        num_agent: 2
+        trial_length: 10
+        max_cycles: 200
+        eval: True
+  training:
+    train_batch_size: 8000
+    sgd_minibatch_size: 2000
+debug: 
+  stop_config:
+    training_iteration: 2
