@@ -23,15 +23,7 @@ class RPTorchRLModule(TorchRLModule, PPORLModule):
     def setup(self):
         catalog = self.config.get_catalog()
 
-        self.multiplayers = catalog.multiplayers
-        if catalog.multiplayers:
-            self.other_theta_encoder = catalog.other_theta_encoder
-            self.other_theta_decoder = catalog.other_theta_decoder
-        else:
-            self.other_theta_encoder = None
-            self.other_theta_decoder = None
-        
-        self.discriminator = catalog.discriminator
+        self.predictor = catalog.predictor
         self.encoder = catalog.encoder
         self.pi_head = catalog.pi_head
         self.vf_head = catalog.vf_head
@@ -42,11 +34,6 @@ class RPTorchRLModule(TorchRLModule, PPORLModule):
     def get_initial_state(self) -> dict:
         return self.encoder.get_initial_state()
 
-    def get_encoder_decoder_out(self, other_theta) -> Mapping[str, Any]:
-        other_theta_encoder_out = self.other_theta_encoder(other_theta)
-        other_theta_decoder_out = self.other_theta_decoder(other_theta_encoder_out)
-        return {"other_theta_encoder_out": other_theta_encoder_out, "other_theta_decoder_out": other_theta_decoder_out}
-
     @override(RLModule)
     def _forward_inference(self, batch: NestedDict) -> Mapping[str, Any]:
         output = {}
@@ -54,54 +41,56 @@ class RPTorchRLModule(TorchRLModule, PPORLModule):
         encoder_outs = self.encoder(batch)
         if Columns.STATE_OUT in encoder_outs:
             output[Columns.STATE_OUT] = encoder_outs[Columns.STATE_OUT]
-        
-        theta = batch[Columns.OBS]['theta']
-        other_theta = batch[Columns.OBS]['other_theta']        
-        discriminator_input = torch.cat([encoder_outs[ENCODER_OUT][ACTOR], theta], dim=-1)
-        predicted_out = self.discriminator(discriminator_input)
 
-        if self.multiplayers:
-            with torch.no_grad():
-                predicted_out = self.other_theta_decoder(predicted_out)
-            output.update(self.get_encoder_decoder_out(other_theta))
+        theta = batch[Columns.OBS]["theta"]
+        other_theta = batch[Columns.OBS]["other_theta"]
+        predictor_input = torch.cat([encoder_outs[ENCODER_OUT][ACTOR], theta], dim=-1)
+        predicted_out = self.predictor(predictor_input)
+        max_indices = torch.argmax(predicted_out, dim=-1)
+        num_classes = predicted_out.size(-1)
+        predicted_out_one_hot = nn.functional.one_hot(
+            max_indices, num_classes=num_classes
+        )
         output["predicted_out"] = predicted_out
-        pi_head_input = torch.cat([encoder_outs[ENCODER_OUT][ACTOR], theta, predicted_out], dim=-1)
-
-        vf_head_input = torch.cat([encoder_outs[ENCODER_OUT][CRITIC], theta, other_theta], dim=-1)
-        vf_out = self.vf_head(vf_head_input)
-        output[Columns.VF_PREDS] = vf_out.squeeze(-1)
+        output["predicted_out_one_hot"] = predicted_out_one_hot
+        pi_head_input = torch.cat(
+            [encoder_outs[ENCODER_OUT][ACTOR], theta, predicted_out_one_hot], dim=-1
+        )
 
         action_logits = self.pi_head(pi_head_input)
         output[Columns.ACTION_DIST_INPUTS] = action_logits
 
+        # action_dist = self.action_dist_cls.from_logits(action_logits)
+        # output[Columns.ACTIONS] = action_dist.sample()
+
         return output
-    
+
     @override(RLModule)
     def _forward_exploration(self, batch: NestedDict) -> Mapping[str, Any]:
-        """PPO forward pass during exploration.
-        Besides the action distribution, this method also returns the parameters of the
-        policy distribution to be used for computing KL divergence between the old
-        policy and the new policy during training.
-        """
         output = {}
 
         encoder_outs = self.encoder(batch)
         if Columns.STATE_OUT in encoder_outs:
             output[Columns.STATE_OUT] = encoder_outs[Columns.STATE_OUT]
-        
-        theta = batch[Columns.OBS]['theta']
-        other_theta = batch[Columns.OBS]['other_theta']        
-        discriminator_input = torch.cat([encoder_outs[ENCODER_OUT][ACTOR], theta], dim=-1)
-        predicted_out = self.discriminator(discriminator_input)
 
-        if self.multiplayers:
-            with torch.no_grad():
-                predicted_out = self.other_theta_decoder(predicted_out)
-            output.update(self.get_encoder_decoder_out(other_theta))
+        theta = batch[Columns.OBS]["theta"]
+        other_theta = batch[Columns.OBS]["other_theta"]
+        predictor_input = torch.cat([encoder_outs[ENCODER_OUT][ACTOR], theta], dim=-1)
+        predicted_out = self.predictor(predictor_input)
+        max_indices = torch.argmax(predicted_out, dim=-1)
+        num_classes = predicted_out.size(-1)
+        predicted_out_one_hot = nn.functional.one_hot(
+            max_indices, num_classes=num_classes
+        )
         output["predicted_out"] = predicted_out
-        pi_head_input = torch.cat([encoder_outs[ENCODER_OUT][ACTOR], theta, predicted_out], dim=-1)
+        output["predicted_out_one_hot"] = predicted_out_one_hot
+        pi_head_input = torch.cat(
+            [encoder_outs[ENCODER_OUT][ACTOR], theta, predicted_out_one_hot], dim=-1
+        )
 
-        vf_head_input = torch.cat([encoder_outs[ENCODER_OUT][CRITIC], theta, other_theta], dim=-1)
+        vf_head_input = torch.cat(
+            [encoder_outs[ENCODER_OUT][CRITIC], theta, other_theta], dim=-1
+        )
         vf_out = self.vf_head(vf_head_input)
         output[Columns.VF_PREDS] = vf_out.squeeze(-1)
 
@@ -109,7 +98,7 @@ class RPTorchRLModule(TorchRLModule, PPORLModule):
         output[Columns.ACTION_DIST_INPUTS] = action_logits
 
         return output
-        
+
     @override(RLModule)
     def _forward_train(self, batch: NestedDict) -> Mapping[str, Any]:
         output = {}
@@ -117,19 +106,24 @@ class RPTorchRLModule(TorchRLModule, PPORLModule):
         encoder_outs = self.encoder(batch)
         if Columns.STATE_OUT in encoder_outs:
             output[Columns.STATE_OUT] = encoder_outs[Columns.STATE_OUT]
-        
-        theta = batch[Columns.OBS]['theta']
-        other_theta = batch[Columns.OBS]['other_theta']        
-        discriminator_input = torch.cat([encoder_outs[ENCODER_OUT][ACTOR], theta], dim=-1)
-        predicted_out = self.discriminator(discriminator_input)
 
-        if self.multiplayers:
-            with torch.no_grad():
-                predicted_out = self.other_theta_decoder(predicted_out)
-            output.update(self.get_encoder_decoder_out(other_theta))
+        theta = batch[Columns.OBS]["theta"]
+        other_theta = batch[Columns.OBS]["other_theta"]
+        predictor_input = torch.cat([encoder_outs[ENCODER_OUT][ACTOR], theta], dim=-1)
+        predicted_out = self.predictor(predictor_input)
+        max_indices = torch.argmax(predicted_out, dim=-1)
+        num_classes = predicted_out.size(-1)
+        predicted_out_one_hot = nn.functional.one_hot(
+            max_indices, num_classes=num_classes
+        )
         output["predicted_out"] = predicted_out
-        pi_head_input = torch.cat([encoder_outs[ENCODER_OUT][ACTOR], theta, predicted_out], dim=-1)
-        vf_head_input = torch.cat([encoder_outs[ENCODER_OUT][CRITIC], theta, other_theta], dim=-1)
+        output["predicted_out_one_hot"] = predicted_out_one_hot
+        pi_head_input = torch.cat(
+            [encoder_outs[ENCODER_OUT][ACTOR], theta, predicted_out_one_hot], dim=-1
+        )
+        vf_head_input = torch.cat(
+            [encoder_outs[ENCODER_OUT][CRITIC], theta, other_theta], dim=-1
+        )
         vf_out = self.vf_head(vf_head_input)
         output[Columns.VF_PREDS] = vf_out.squeeze(-1)
 
@@ -137,7 +131,7 @@ class RPTorchRLModule(TorchRLModule, PPORLModule):
         output[Columns.ACTION_DIST_INPUTS] = action_logits
 
         return output
-    
+
     @override(PPORLModule)
     def _compute_values(self, batch, device=None):
         infos = batch.pop(Columns.INFOS, None)
@@ -146,4 +140,3 @@ class RPTorchRLModule(TorchRLModule, PPORLModule):
             batch[Columns.INFOS] = infos
 
         return self.critic(batch)
-

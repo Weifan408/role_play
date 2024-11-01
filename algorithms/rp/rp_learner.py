@@ -19,7 +19,7 @@ PREDICTED_THETA_LOSS_KEY = "predicted_theta_loss"
 
 
 class RPTorchLearner(PPOTorchLearner):
-    
+
     def compute_loss_for_module(
         self,
         *,
@@ -34,39 +34,20 @@ class RPTorchLearner(PPOTorchLearner):
             batch=batch,
             fwd_out=fwd_out,
         )
-        if "loss_mask" in batch:
-            num_valid = torch.sum(batch["loss_mask"])
-
-            def possibly_masked_mean(data_):
-                return torch.sum(data_[batch["loss_mask"]]) / num_valid
-
-        else:
-            possibly_masked_mean = torch.mean
-        
         criterion = nn.BCELoss()
-        if "other_theta_decoder_out" in fwd_out:
-            # encoder-decoder loss
-            other_theta_decoder_out = fwd_out["other_theta_decoder_out"]
-            other_theta_decoder_out_softmax = F.softmax(other_theta_decoder_out, dim=-1)
-            encoder_decoder_loss = possibly_masked_mean(criterion(other_theta_decoder_out_softmax, batch[Columns.OBS]['other_theta']))
-
-            total_loss += encoder_decoder_loss
-            self.register_metrics(
-                module_id,
-                {
-                    ENCODER_DECODER_KEY: encoder_decoder_loss,
-                },
-            )
-
         predicted_out = fwd_out["predicted_out"]
-        predicted_out_softmax = F.softmax(predicted_out, dim=-1)
-        predicted_theta_loss = possibly_masked_mean(criterion(predicted_out_softmax, batch[Columns.OBS]['other_theta']))
-        total_loss += predicted_theta_loss
+        eps = 1e-7
+        probs_clamped = torch.clamp(predicted_out, eps, 1 - eps)
+        other_theta = batch[Columns.OBS]["other_theta"].reshape(
+            *predicted_out.shape,
+        )
+        predicted_other_theta_loss = criterion(probs_clamped, other_theta)
+        total_loss += predicted_other_theta_loss
 
         self.register_metrics(
             module_id,
             {
-                PREDICTED_THETA_LOSS_KEY: predicted_theta_loss,
+                PREDICTED_THETA_LOSS_KEY: predicted_other_theta_loss,
             },
         )
         return total_loss

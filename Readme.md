@@ -16,6 +16,6 @@ pip install -r requirements.txt
 ### Train example
 Train 1e7 environment step in two players harverst environment:
 ```python
-python ${workspaceFolder}/experiments/run_rp.py --num_agent=2 --stop=5e7 --configs harvest
+python ${workspaceFolder}/experiments/run_meltingpot.py --stop=1e8 --configs harvest
 ```
-If you want to save the training results in WanDB, add `--wandb=True` and modify your wandb information in `run_rp.py`.
+If you want to save the training results in WanDB, add `--wandb=True` and modify your wandb information in `run_meltingpot.py`.

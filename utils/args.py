@@ -18,9 +18,18 @@ def get_cli_args():
         help="Whether to use WanDB logging.",
     )
     parser.add_argument(
-        "--num_agent",
+        "--device",
+        choices=[
+            "cpu",
+            "cuda:0",
+            "cuda:1",
+        ],
+        default="cpu",
+    )
+    parser.add_argument(
+        "--num_agents",
         type=int,
-        default=2,
+        default=None,
         help="Number of agents in the environment.",
     )
     parser.add_argument(
@@ -28,6 +37,20 @@ def get_cli_args():
         type=float,
         default=1e8,
         help="Number of timesteps to run the experiment for.",
+    )
+
+    parser.add_argument(
+        "--collective_reward",
+        type=bool,
+        default=False,
+        help="If True, use collective reward.",
+    )
+
+    parser.add_argument(
+        "--inequal",
+        type=bool,
+        default=False,
+        help="If True, use inequal reward.",
     )
 
     args, remaining = parser.parse_known_args()
